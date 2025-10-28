@@ -37,6 +37,8 @@ class AppointmentController extends Controller
     {
         $data = $this->validateData($request);
         $data['datetime'] = $this->normalizeDateTime($data['datetime']);
+        $data['created_at'] = now();
+        $data['updated_at'] = now();
         $appointment = Appointment::create($data);
         return response()->json($appointment, 201);
     }
@@ -50,6 +52,7 @@ class AppointmentController extends Controller
     {
         $data = $this->validateData($request);
         $data['datetime'] = $this->normalizeDateTime($data['datetime']);
+        $data['updated_at'] = now();
         $appointment->update($data);
         return response()->json($appointment);
     }
