@@ -38,11 +38,6 @@
         <div class="spinner"></div>
       </div>
 
-      <!-- Error State -->
-      <div v-if="error" class="error-message">
-        {{ error }}
-      </div>
-
       <!-- Appointments Table -->
       <div v-if="!loading && visibleAppointments.length > 0" class="table-container">
         <table class="appointments-table">
@@ -91,12 +86,12 @@
       </div>
     </main>
 
-      <!-- Load more -->
-      <div v-if="!loading && appointments.length > 0 && hasMore" class="load-more">
-        <button class="btn-primary load-more" @click="loadMore" :disabled="loadingMore">
-          {{ loadingMore ? 'Loading...' : 'Load more' }}
-        </button>
-      </div>
+    <!-- Load more -->
+    <div v-if="!loading && appointments.length > 0 && hasMore" class="load-more">
+      <button class="btn-primary load-more" @click="loadMore" :disabled="loadingMore">
+        {{ loadingMore ? 'Loading...' : 'Load more' }}
+      </button>
+    </div>
 
     <!-- Create/Edit Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
@@ -106,6 +101,9 @@
           <button class="close-btn" @click="closeModal">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- Form errors -->
+          <div v-if="modalError" class="modal-error">{{ modalError }}</div>
+
           <form @submit.prevent="submitForm">
             <div class="form-group">
               <label for="patient_name">Patient Name *</label>
@@ -169,6 +167,9 @@
           <button class="close-btn" @click="closeDeleteModal">&times;</button>
         </div>
         <div class="modal-body">
+          <!-- Delete modal errors -->
+          <div v-if="deleteError" class="modal-error">{{ deleteError }}</div>
+
           <p class="delete-message">Are you sure you want to delete this appointment?</p>
           <div v-if="appointmentToDelete" class="delete-details">
             <p><strong>Patient:</strong> {{ appointmentToDelete.patient_name }}</p>
@@ -201,7 +202,9 @@ export default {
     return {
       appointments: [],
       loading: false,
-      error: null,
+      error: null,       
+      modalError: null,  
+      deleteError: null,
       showModal: false,
       showDeleteModal: false,
       isEditMode: false,
@@ -231,7 +234,7 @@ export default {
     hasMore() {
       return this.page < this.lastPage;
     },
-    // Client-side filtered + sorted list (does not affect fetching/pagination)
+    // Client-side filtered + sorted list of appointments
     visibleAppointments() {
       const q = (this.debouncedQuery || '').trim().toLowerCase();
       let list = this.appointments.slice();
@@ -273,9 +276,7 @@ export default {
       this.error = null;
 
       axios
-        .get(`${API_URL}/appointments`, {
-          params: { page: this.page, per_page: this.perPage }
-        })
+        .get(`${API_URL}/appointments`, { params: { page: this.page, per_page: this.perPage } })
         .then(response => {
           const payload = response.data;
 
@@ -298,6 +299,7 @@ export default {
           }
         })
         .catch(error => {
+          // keep fetch error internal (not shown on page)
           this.error = 'Failed to load appointments.';
           console.error('API Error:', error);
         })
@@ -317,6 +319,7 @@ export default {
     openCreateModal() {
       this.isEditMode = false;
       this.resetForm();
+      this.modalError = null;
       this.showModal = true;
     },
     
@@ -329,6 +332,7 @@ export default {
         datetime: this.formatDateTimeForInput(appointment.datetime),
         status: appointment.status
       };
+      this.modalError = null;
       this.showModal = true;
     },
     
@@ -339,12 +343,14 @@ export default {
     
     closeModal() {
       this.showModal = false;
+      this.modalError = null;
       this.resetForm();
     },
     
     closeDeleteModal() {
       this.showDeleteModal = false;
       this.appointmentToDelete = null;
+      this.deleteError = null;
     },
     
     resetForm() {
@@ -367,17 +373,21 @@ export default {
     
     createAppointment() {
       this.saving = true;
-      this.error = null;
+      this.modalError = null;
+
+      if (this.formData.patient_name.length < 2) {
+        this.modalError = 'Patient name must be at least 2 characters long.';
+        this.saving = false;
+        return;
+      }
 
       axios.post(`${API_URL}/appointments`, this.formData)
         .then(response => {
-          // Prepend so the user sees it immediately on current page
           this.appointments.unshift(response.data);
           this.closeModal();
-          console.log('Appointment created successfully');
         })
         .catch(error => {
-          this.error = 'Failed to create appointment.';
+          this.modalError = error.response?.data?.message || 'Failed to create appointment.';
           console.error('Create Error:', error.response || error);
         })
         .finally(() => {
@@ -387,19 +397,22 @@ export default {
     
     updateAppointment() {
       this.saving = true;
-      this.error = null;
+      this.modalError = null;
+
+      if (this.formData.patient_name.length < 2) {
+        this.modalError = 'Patient name must be at least 2 characters long.';
+        this.saving = false;
+        return;
+      }
 
       axios.put(`${API_URL}/appointments/${this.formData.id}`, this.formData)
         .then(response => {
           const index = this.appointments.findIndex(a => a.id === this.formData.id);
-          if (index !== -1) {
-            this.appointments[index] = response.data;
-          }
+          if (index !== -1) this.appointments[index] = response.data;
           this.closeModal();
-          console.log('Appointment updated successfully');
         })
         .catch(error => {
-          this.error = 'Failed to update appointment.';
+          this.modalError = error.response?.data?.message || 'Failed to update appointment.';
           console.error('Update Error:', error.response || error);
         })
         .finally(() => {
@@ -411,18 +424,15 @@ export default {
       if (!this.appointmentToDelete) return;
 
       this.deleting = true;
-      this.error = null;
-      // fixed: remove duplicate /api
+      this.deleteError = null;
+
       axios.delete(`${API_URL}/appointments/${this.appointmentToDelete.id}`)
         .then(() => {
-          this.appointments = this.appointments.filter(
-            appointment => appointment.id !== this.appointmentToDelete.id
-          );
+          this.appointments = this.appointments.filter(a => a.id !== this.appointmentToDelete.id);
           this.closeDeleteModal();
-          console.log('Appointment deleted successfully');
         })
         .catch(error => {
-          this.error = 'Failed to delete appointment.';
+          this.deleteError = error.response?.data?.message || 'Failed to delete appointment.';
           console.error('Delete Error:', error.response || error);
         })
         .finally(() => {
@@ -962,6 +972,16 @@ export default {
   color: #e91e63;
   font-weight: 500;
   font-size: 0.9rem;
+}
+
+/* Modal error styling */
+.modal-error {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #fde2e7;
+  color: #b00020;
+  border: 1px solid #f8bbd0;
+  border-radius: 8px;
 }
 
 /* Responsive */
