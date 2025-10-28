@@ -167,9 +167,6 @@
           <button class="close-btn" @click="closeDeleteModal">&times;</button>
         </div>
         <div class="modal-body">
-          <!-- Delete modal errors -->
-          <div v-if="deleteError" class="modal-error">{{ deleteError }}</div>
-
           <p class="delete-message">Are you sure you want to delete this appointment?</p>
           <div v-if="appointmentToDelete" class="delete-details">
             <p><strong>Patient:</strong> {{ appointmentToDelete.patient_name }}</p>
@@ -214,7 +211,6 @@ export default {
       loading: false,
       error: null,       
       modalError: null,  
-      deleteError: null,
       showModal: false,
       showDeleteModal: false,
       isEditMode: false,
@@ -367,7 +363,6 @@ export default {
     closeDeleteModal() {
       this.showDeleteModal = false;
       this.appointmentToDelete = null;
-      this.deleteError = null;
     },
     
     resetForm() {
@@ -451,7 +446,6 @@ export default {
       if (!this.appointmentToDelete) return;
 
       this.deleting = true;
-      this.deleteError = null;
 
       axios.delete(`${API_URL}/appointments/${this.appointmentToDelete.id}`)
         .then(() => {
@@ -460,9 +454,8 @@ export default {
           this.notify('Appointment deleted successfully.', 'success');
         })
         .catch(error => {
-          this.deleteError = error.response?.data?.message || 'Failed to delete appointment.';
           console.error('Delete Error:', error.response || error);
-          this.notify('Failed to delete appointment.', 'error');
+          this.notify(error.response?.data?.message || 'Failed to delete appointment.', 'error');
         })
         .finally(() => {
           this.deleting = false;
