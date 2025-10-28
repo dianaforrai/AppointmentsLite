@@ -24,6 +24,16 @@
           placeholder="Search by patient or doctor..."
           aria-label="Search by patient or doctor"
         />
+        <!-- New: Status filter -->
+        <div class="sort">
+          <label class="sort-label" for="statusFilter">Status:</label>
+          <select id="statusFilter" class="sort-select" v-model="statusFilter" aria-label="Filter by status">
+            <option value="">All</option>
+            <option value="Scheduled">Scheduled</option>
+            <option value="Done">Done</option>
+            <option value="Cancelled">Cancelled</option>
+          </select>
+        </div>
         <div class="sort">
           <label class="sort-label" for="sortOrder">Sort by date:</label>
           <select id="sortOrder" class="sort-select" v-model="sortOrder" aria-label="Sort by date">
@@ -209,8 +219,8 @@ export default {
     return {
       appointments: [],
       loading: false,
-      error: null,       
-      modalError: null,  
+      error: null,
+      modalError: null,
       showModal: false,
       showDeleteModal: false,
       isEditMode: false,
@@ -224,7 +234,7 @@ export default {
         datetime: '',
         status: ''
       },
-      // pagination state
+      // pagination + filters
       page: 1,
       perPage: 10,
       lastPage: 1,
@@ -232,42 +242,24 @@ export default {
       loadingMore: false,
       searchQuery: '',
       debouncedQuery: '',
-      sortOrder: 'desc', // 'asc' | 'desc'
+      sortOrder: 'desc', // server-side sort
+      statusFilter: '',  // server-side status filter
       _searchTimer: null,
 
       // Toast state
       toast: {
         visible: false,
         message: '',
-        type: 'success', // 'success' | 'error'
-      },
-    };
+        type: 'success',
+      }
+    }
   },
   computed: {
     hasMore() {
       return this.page < this.lastPage;
     },
-    // Client-side filtered + sorted list of appointments
     visibleAppointments() {
-      const q = (this.debouncedQuery || '').trim().toLowerCase();
-      let list = this.appointments.slice();
-
-      if (q) {
-        list = list.filter(a => {
-          const patient = String(a.patient_name ?? '').toLowerCase();
-          const doctor = String(a.doctor ?? '').toLowerCase();
-          return patient.includes(q) || doctor.includes(q);
-        });
-      }
-
-      list.sort((a, b) => {
-        const da = new Date(a.datetime).getTime();
-        const db = new Date(b.datetime).getTime();
-        if (isNaN(da) || isNaN(db)) return 0;
-        return this.sortOrder === 'asc' ? da - db : db - da;
-      });
-
-      return list;
+      return this.appointments;
     }
   },
   created() {
@@ -275,12 +267,24 @@ export default {
     this.fetchAppointments({ append: false });
   },
   watch: {
-    // Debounce search input
+    // Debounce search input, then refetch
     searchQuery(val) {
       if (this._searchTimer) clearTimeout(this._searchTimer);
       this._searchTimer = setTimeout(() => {
         this.debouncedQuery = val;
       }, 300);
+    },
+    debouncedQuery() {
+      this.page = 1;
+      this.fetchAppointments({ append: false });
+    },
+    statusFilter() {
+      this.page = 1;
+      this.fetchAppointments({ append: false });
+    },
+    sortOrder() {
+      this.page = 1;
+      this.fetchAppointments({ append: false });
     }
   },
   methods: {
@@ -288,13 +292,20 @@ export default {
       if (!append) this.loading = true;
       this.error = null;
 
+      const params = {
+        page: this.page,
+        per_page: this.perPage,
+        sort: this.sortOrder,
+      };
+      if (this.debouncedQuery?.trim()) params.search = this.debouncedQuery.trim();
+      if (this.statusFilter) params.status = this.statusFilter;
+
       axios
-        .get(`${API_URL}/appointments`, { params: { page: this.page, per_page: this.perPage } })
+        .get(`${API_URL}/appointments`, { params })
         .then(response => {
           const payload = response.data;
 
           if (Array.isArray(payload)) {
-            // Fallback if API was called with all=true by mistake
             this.appointments = append ? [...this.appointments, ...payload] : payload;
             this.lastPage = 1;
             this.total = payload.length;
@@ -312,7 +323,6 @@ export default {
           }
         })
         .catch(error => {
-          // keep fetch error internal (not shown on page)
           this.error = 'Failed to load appointments.';
           console.error('API Error:', error);
         })
@@ -335,7 +345,7 @@ export default {
       this.modalError = null;
       this.showModal = true;
     },
-    
+
     openEditModal(appointment) {
       this.isEditMode = true;
       this.formData = {
@@ -348,23 +358,23 @@ export default {
       this.modalError = null;
       this.showModal = true;
     },
-    
+
     openDeleteModal(appointment) {
       this.appointmentToDelete = appointment;
       this.showDeleteModal = true;
     },
-    
+
     closeModal() {
       this.showModal = false;
       this.modalError = null;
       this.resetForm();
     },
-    
+
     closeDeleteModal() {
       this.showDeleteModal = false;
       this.appointmentToDelete = null;
     },
-    
+
     resetForm() {
       this.formData = {
         id: null,
@@ -374,7 +384,7 @@ export default {
         status: ''
       };
     },
-    
+
     submitForm() {
       if (this.isEditMode) {
         this.updateAppointment();
@@ -382,7 +392,7 @@ export default {
         this.createAppointment();
       }
     },
-    
+
     createAppointment() {
       this.saving = true;
       this.modalError = null;
@@ -394,8 +404,10 @@ export default {
       }
 
       axios.post(`${API_URL}/appointments`, this.formData)
-        .then(response => {
-          this.appointments.unshift(response.data);
+        .then(() => {
+          // Refetch first page to keep server order consistent
+          this.page = 1;
+          this.fetchAppointments({ append: false });
           this.closeModal();
         })
         .catch(error => {
@@ -406,7 +418,7 @@ export default {
           this.saving = false;
         });
     },
-    
+
     updateAppointment() {
       this.saving = true;
       this.modalError = null;
@@ -418,9 +430,9 @@ export default {
       }
 
       axios.put(`${API_URL}/appointments/${this.formData.id}`, this.formData)
-        .then(response => {
-          const index = this.appointments.findIndex(a => a.id === this.formData.id);
-          if (index !== -1) this.appointments[index] = response.data;
+        .then(() => {
+          // Refetch current page to reflect server-side changes/order
+          this.fetchAppointments({ append: false });
           this.closeModal();
         })
         .catch(error => {
@@ -431,7 +443,7 @@ export default {
           this.saving = false;
         });
     },
-    
+
     notify(message, type = 'success', timeout = 2500) {
       this.toast.message = message;
       this.toast.type = type;
@@ -449,6 +461,7 @@ export default {
 
       axios.delete(`${API_URL}/appointments/${this.appointmentToDelete.id}`)
         .then(() => {
+          // Remove locally without full refetch
           this.appointments = this.appointments.filter(a => a.id !== this.appointmentToDelete.id);
           this.closeDeleteModal();
           this.notify('Appointment deleted successfully.', 'success');
@@ -461,7 +474,7 @@ export default {
           this.deleting = false;
         });
     },
-    
+
     formatDateTime(datetime) {
       const date = new Date(datetime);
       return date.toLocaleString('en-US', {
@@ -472,7 +485,7 @@ export default {
         minute: '2-digit'
       });
     },
-    
+
     formatDateTimeForInput(datetime) {
       const date = new Date(datetime);
       const year = date.getFullYear();
@@ -483,7 +496,7 @@ export default {
       return `${year}-${month}-${day}T${hours}:${minutes}`;
     }
   }
-};
+}
 </script>
 
 <style scoped>

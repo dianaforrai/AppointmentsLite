@@ -23,7 +23,11 @@ class AppointmentController extends Controller
             $q->where('status', $status);
         }
 
-        $q->orderBy('datetime', 'asc');
+        $sort = strtolower($request->query('sort', 'desc'));
+        if (!in_array($sort, ['asc', 'desc'], true)) {
+            $sort = 'desc';
+        }
+        $q->orderBy('datetime', $sort);
 
         // Return all appointments if 'all' parameter is present, otherwise paginate
         if ($request->query('all') === 'true') {
