@@ -15,6 +15,24 @@
         <p class="page-subtitle">Manage and track all your appointments</p>
       </div>
 
+      <!-- Filter + Sort toolbar -->
+      <div class="toolbar">
+        <input
+          class="search-input"
+          type="text"
+          v-model="searchQuery"
+          placeholder="Search by patient or doctor..."
+          aria-label="Search by patient or doctor"
+        />
+        <div class="sort">
+          <label class="sort-label" for="sortOrder">Sort by date:</label>
+          <select id="sortOrder" class="sort-select" v-model="sortOrder" aria-label="Sort by date">
+            <option value="desc">Newest first</option>
+            <option value="asc">Oldest first</option>
+          </select>
+        </div>
+      </div>
+
       <!-- Loading State -->
       <div v-if="loading" class="loading">
         <div class="spinner"></div>
@@ -26,7 +44,7 @@
       </div>
 
       <!-- Appointments Table -->
-      <div v-if="!loading && appointments.length > 0" class="table-container">
+      <div v-if="!loading && visibleAppointments.length > 0" class="table-container">
         <table class="appointments-table">
           <thead>
             <tr>
@@ -38,7 +56,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="appointment in appointments" :key="appointment.id">
+            <tr v-for="appointment in visibleAppointments" :key="appointment.id">
               <td>{{ appointment.patient_name }}</td>
               <td>{{ appointment.doctor }}</td>
               <td>{{ formatDateTime(appointment.datetime) }}</td>
@@ -66,18 +84,19 @@
         </table>
       </div>
 
-      <!-- Load more -->
-      <div v-if="!loading && appointments.length > 0 && hasMore" class="load-more">
-        <button class="btn-primary" @click="loadMore" :disabled="loadingMore">
-          {{ loadingMore ? 'Loading...' : 'Load more' }}
-        </button>
-      </div>
 
       <!-- Empty State -->
-      <div v-if="!loading && appointments.length === 0" class="empty-state">
+      <div v-if="!loading && visibleAppointments.length === 0" class="empty-state">
         <p class="empty-text">No appointments found</p>
       </div>
     </main>
+
+      <!-- Load more -->
+      <div v-if="!loading && appointments.length > 0 && hasMore" class="load-more">
+        <button class="btn-primary load-more" @click="loadMore" :disabled="loadingMore">
+          {{ loadingMore ? 'Loading...' : 'Load more' }}
+        </button>
+      </div>
 
     <!-- Create/Edit Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
@@ -202,16 +221,51 @@ export default {
       lastPage: 1,
       total: 0,
       loadingMore: false,
+      searchQuery: '',
+      debouncedQuery: '',
+      sortOrder: 'desc', // 'asc' | 'desc'
+      _searchTimer: null,
     };
   },
   computed: {
     hasMore() {
       return this.page < this.lastPage;
+    },
+    // Client-side filtered + sorted list (does not affect fetching/pagination)
+    visibleAppointments() {
+      const q = (this.debouncedQuery || '').trim().toLowerCase();
+      let list = this.appointments.slice();
+
+      if (q) {
+        list = list.filter(a => {
+          const patient = String(a.patient_name ?? '').toLowerCase();
+          const doctor = String(a.doctor ?? '').toLowerCase();
+          return patient.includes(q) || doctor.includes(q);
+        });
+      }
+
+      list.sort((a, b) => {
+        const da = new Date(a.datetime).getTime();
+        const db = new Date(b.datetime).getTime();
+        if (isNaN(da) || isNaN(db)) return 0;
+        return this.sortOrder === 'asc' ? da - db : db - da;
+      });
+
+      return list;
     }
   },
   created() {
     this.page = 1;
     this.fetchAppointments({ append: false });
+  },
+  watch: {
+    // Debounce search input
+    searchQuery(val) {
+      if (this._searchTimer) clearTimeout(this._searchTimer);
+      this._searchTimer = setTimeout(() => {
+        this.debouncedQuery = val;
+      }, 300);
+    }
   },
   methods: {
     fetchAppointments({ append = false } = {}) {
@@ -355,10 +409,11 @@ export default {
     
     confirmDelete() {
       if (!this.appointmentToDelete) return;
-      
+
       this.deleting = true;
       this.error = null;
-      axios.delete(`${API_URL}/api/appointments/${this.appointmentToDelete.id}`)
+      // fixed: remove duplicate /api
+      axios.delete(`${API_URL}/appointments/${this.appointmentToDelete.id}`)
         .then(() => {
           this.appointments = this.appointments.filter(
             appointment => appointment.id !== this.appointmentToDelete.id
@@ -407,6 +462,7 @@ export default {
 }
 
 .app-container {
+  min-height: 100vh;
   background: linear-gradient(135deg, #fce4ec 0%, #f8bbd0 100%);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
@@ -482,6 +538,56 @@ export default {
   color: #ad1457;
   font-weight: 300;
   margin: 0;
+}
+
+.sort-label {
+    font-size: 0.95rem;
+    color: #880e4f;
+    margin-right: 0.5rem;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  justify-content: space-between;
+  margin: 1rem 0 1.5rem;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  flex: 1 1 320px;
+  min-width: 220px;
+  padding: 0.75rem 1rem;
+  border: 2px solid #f8bbd0;
+  border-radius: 12px;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.search-input:focus {
+  border-color: #f06292;
+}
+
+.sort {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.sort-select {
+  padding: 0.6rem 0.9rem;
+  border: 2px solid #f8bbd0;
+  border-radius: 12px;
+  background: white;
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.sort-select:focus {
+  border-color: #f06292;
 }
 
 /* Loading */
@@ -927,6 +1033,6 @@ export default {
 
 .load-more {
   text-align: center;
-  margin-top: 1rem;
+  margin-bottom: 3rem;
 }
 </style>
