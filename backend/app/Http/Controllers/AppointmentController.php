@@ -11,35 +11,45 @@ class AppointmentController extends Controller
     public function index(Request $request)
     {
         $q = Appointment::query();
-                                    
+
         if ($search = $request->input('search')) {
-            $q->where('patient_name', 'like', "%{$search}%")
-              ->orWhere('doctor', 'like', "%{$search}%");
+            $q->where(function($query) use ($search) {
+                $query->where('patient_name', 'like', "%{$search}%")
+                      ->orWhere('doctor', 'like', "%{$search}%");
+            });
         }
 
         if ($status = $request->query('status')) {
             $q->where('status', $status);
         }
 
-        return $q->orderBy('datetime', 'asc')->paginate(10);
+        $q->orderBy('datetime', 'asc');
+
+        // Return all appointments if 'all' parameter is present, otherwise paginate
+        if ($request->query('all') === 'true') {
+            return response()->json($q->get());
+        }
+
+        return response()->json($q->paginate($request->query('per_page', 10)));
     }
 
     public function store(Request $request)
     {
         $data = $this->validateData($request);
-        return Appointment::create($data);
+        $appointment = Appointment::create($data);
+        return response()->json($appointment, 201);
     }
 
     public function show(Appointment $appointment)
     {
-        return $appointment;
+        return response()->json($appointment);
     }
 
     public function update(Request $request, Appointment $appointment)
     {
         $data = $this->validateData($request);
         $appointment->update($data);
-        return $appointment;
+        return response()->json($appointment);
     }
 
     public function destroy(Appointment $appointment)
