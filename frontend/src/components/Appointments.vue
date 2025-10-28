@@ -189,6 +189,16 @@
       </div>
     </div>
   </div>
+
+  <!-- Toast -->
+  <div
+    v-if="toast.visible"
+    :class="['toast', toast.type === 'success' ? 'toast-success' : 'toast-error']"
+    role="status"
+    aria-live="polite"
+  >
+    {{ toast.message }}
+  </div>
 </template>
 
 <script>
@@ -228,6 +238,13 @@ export default {
       debouncedQuery: '',
       sortOrder: 'desc', // 'asc' | 'desc'
       _searchTimer: null,
+
+      // Toast state
+      toast: {
+        visible: false,
+        message: '',
+        type: 'success', // 'success' | 'error'
+      },
     };
   },
   computed: {
@@ -420,6 +437,16 @@ export default {
         });
     },
     
+    notify(message, type = 'success', timeout = 2500) {
+      this.toast.message = message;
+      this.toast.type = type;
+      this.toast.visible = true;
+      clearTimeout(this._toastTimer);
+      this._toastTimer = setTimeout(() => {
+        this.toast.visible = false;
+      }, timeout);
+    },
+
     confirmDelete() {
       if (!this.appointmentToDelete) return;
 
@@ -430,10 +457,12 @@ export default {
         .then(() => {
           this.appointments = this.appointments.filter(a => a.id !== this.appointmentToDelete.id);
           this.closeDeleteModal();
+          this.notify('Appointment deleted successfully.', 'success');
         })
         .catch(error => {
           this.deleteError = error.response?.data?.message || 'Failed to delete appointment.';
           console.error('Delete Error:', error.response || error);
+          this.notify('Failed to delete appointment.', 'error');
         })
         .finally(() => {
           this.deleting = false;
@@ -982,6 +1011,33 @@ export default {
   color: #b00020;
   border: 1px solid #f8bbd0;
   border-radius: 8px;
+}
+
+/* Toast */
+.toast {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 1100;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  color: #fff;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+  animation: toast-in 200ms ease-out;
+  max-width: 80vw;
+}
+
+.toast-success {
+  background: #2e7d32;
+}
+
+.toast-error {
+  background: #c62828;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 /* Responsive */
