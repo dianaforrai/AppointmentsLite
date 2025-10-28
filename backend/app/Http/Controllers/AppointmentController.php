@@ -36,6 +36,7 @@ class AppointmentController extends Controller
     public function store(Request $request)
     {
         $data = $this->validateData($request);
+        $data['datetime'] = $this->normalizeDateTime($data['datetime']);
         $appointment = Appointment::create($data);
         return response()->json($appointment, 201);
     }
@@ -48,6 +49,7 @@ class AppointmentController extends Controller
     public function update(Request $request, Appointment $appointment)
     {
         $data = $this->validateData($request);
+        $data['datetime'] = $this->normalizeDateTime($data['datetime']);
         $appointment->update($data);
         return response()->json($appointment);
     }
@@ -66,5 +68,16 @@ class AppointmentController extends Controller
             'datetime' => 'required|date',
             'status' => ['required', Rule::in(['Scheduled', 'Done', 'Cancelled'])],
         ]);
+    }
+    private function normalizeDateTime(string $value): string
+    {
+        // Convert "YYYY-MM-DDTHH:MM" -> "YYYY-MM-DD HH:MM:SS"
+        if (str_contains($value, 'T')) {
+            $value = str_replace('T', ' ', $value);
+            if (strlen($value) === 16) {
+                $value .= ':00';
+            }
+        }
+        return $value;
     }
 }
