@@ -66,13 +66,18 @@
         </table>
       </div>
 
+      <!-- Load more -->
+      <div v-if="!loading && appointments.length > 0 && hasMore" class="load-more">
+        <button class="btn-primary" @click="loadMore" :disabled="loadingMore">
+          {{ loadingMore ? 'Loading...' : 'Load more' }}
+        </button>
+      </div>
+
       <!-- Empty State -->
       <div v-if="!loading && appointments.length === 0" class="empty-state">
         <p class="empty-text">No appointments found</p>
       </div>
     </main>
-
-
 
     <!-- Create/Edit Modal -->
     <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
@@ -169,6 +174,8 @@
 <script>
 import axios from 'axios';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api';
+
 export default {
   name: 'AppointmentsApp',
   data() {
@@ -188,25 +195,53 @@ export default {
         doctor: '',
         datetime: '',
         status: ''
-      }
+      },
+      // pagination state
+      page: 1,
+      perPage: 10,
+      lastPage: 1,
+      total: 0,
+      loadingMore: false,
     };
   },
+  computed: {
+    hasMore() {
+      return this.page < this.lastPage;
+    }
+  },
   created() {
-    this.fetchAppointments();
+    this.page = 1;
+    this.fetchAppointments({ append: false });
   },
   methods: {
-    fetchAppointments() {
-      this.loading = true;
+    fetchAppointments({ append = false } = {}) {
+      if (!append) this.loading = true;
       this.error = null;
-      
-      axios.get('http://127.0.0.1:8000/api/appointments?all=true')
+
+      axios
+        .get(`${API_URL}/appointments`, {
+          params: { page: this.page, per_page: this.perPage }
+        })
         .then(response => {
-          if (Array.isArray(response.data)) {
-            this.appointments = response.data;
-          } else if (response.data.data) {
-            this.appointments = response.data.data;
+          const payload = response.data;
+
+          if (Array.isArray(payload)) {
+            // Fallback if API was called with all=true by mistake
+            this.appointments = append ? [...this.appointments, ...payload] : payload;
+            this.lastPage = 1;
+            this.total = payload.length;
+          } else {
+            const items = payload.data || [];
+            if (append) {
+              this.appointments.push(...items);
+            } else {
+              this.appointments = items;
+            }
+            this.page = payload.current_page ?? this.page;
+            this.lastPage = payload.last_page ?? 1;
+            this.perPage = payload.per_page ?? this.perPage;
+            this.total = payload.total ?? this.total;
           }
-          console.log('Appointments loaded:', this.appointments);
         })
         .catch(error => {
           this.error = 'Failed to load appointments.';
@@ -214,9 +249,17 @@ export default {
         })
         .finally(() => {
           this.loading = false;
+          this.loadingMore = false;
         });
     },
-    
+
+    loadMore() {
+      if (!this.hasMore || this.loadingMore) return;
+      this.loadingMore = true;
+      this.page += 1;
+      this.fetchAppointments({ append: true });
+    },
+
     openCreateModal() {
       this.isEditMode = false;
       this.resetForm();
@@ -271,10 +314,11 @@ export default {
     createAppointment() {
       this.saving = true;
       this.error = null;
-      
-      axios.post('http://127.0.0.1:8000/api/appointments', this.formData)
+
+      axios.post(`${API_URL}/appointments`, this.formData)
         .then(response => {
-          this.appointments.push(response.data);
+          // Prepend so the user sees it immediately on current page
+          this.appointments.unshift(response.data);
           this.closeModal();
           console.log('Appointment created successfully');
         })
@@ -290,8 +334,8 @@ export default {
     updateAppointment() {
       this.saving = true;
       this.error = null;
-      console.log(this.formData);
-      axios.put(`http://127.0.0.1:8000/api/appointments/${this.formData.id}`, this.formData)
+
+      axios.put(`${API_URL}/appointments/${this.formData.id}`, this.formData)
         .then(response => {
           const index = this.appointments.findIndex(a => a.id === this.formData.id);
           if (index !== -1) {
@@ -314,8 +358,7 @@ export default {
       
       this.deleting = true;
       this.error = null;
-      
-      axios.delete(`http://127.0.0.1:8000/api/appointments/${this.appointmentToDelete.id}`)
+      axios.delete(`${API_URL}/api/appointments/${this.appointmentToDelete.id}`)
         .then(() => {
           this.appointments = this.appointments.filter(
             appointment => appointment.id !== this.appointmentToDelete.id
@@ -880,5 +923,10 @@ export default {
     font-size: 0.8rem;
     margin-right: 0.25rem;
   }
+}
+
+.load-more {
+  text-align: center;
+  margin-top: 1rem;
 }
 </style>
