@@ -1,6 +1,6 @@
 # AppointmentsLite
 
-Lightweight appointment scheduling app — create, manage and view appointments.
+Lightweight appointment scheduling app - create, manage and view appointments.
 
 
 
